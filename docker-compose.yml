@@ -1,5 +1,6 @@
 installer:
-  image: andreaskoch/dockerized-magento-installer
+  build: docker-images/installer
+  dockerfile: Dockerfile.extended
   environment:
     DOMAIN: dockerized-magento.local
     MAGENTO_ROOT: /var/www/html/web
@@ -10,7 +11,7 @@ installer:
     ADMIN_USERNAME: admin
     ADMIN_FIRSTNAME: Admin
     ADMIN_LASTNAME: Inistrator
-    ADMIN_PASSWORD: password123
+    ADMIN_PASSWORD: pw
     ADMIN_FRONTNAME: admin
     ADMIN_EMAIL: admin@example.com
     ENCRYPTIONKEY: 731aea833710535779fe8c7c49bc6c4d
@@ -23,12 +24,14 @@ installer:
     - ./config/installer/magento/fpc.xml.tmpl:/etc/fpc.xml.tmpl
     - ./config/installer/bin/substitute-env-vars.sh:/bin/substitute-env-vars.sh
     - ./config/installer/bin/install.sh:/bin/install.sh
+    - ~/.composer:/root/.composer
+    - ~/.ssh:/root/.ssh
   links:
     - "cache:rediscache"
     - "sessions:redissession"
     - "fullpagecache:redisfullpagecache"
-    - "solr:solr"
     - "mysql:mysql"
+    - "elasticsearch:elasticsearch"
   entrypoint: /bin/install.sh
 
 nginx:
@@ -49,25 +52,50 @@ nginx:
   volumes_from:
     - php
 php:
-  image: andreaskoch/dockerized-magento-php
+  build: docker-images/php
+  dockerfile: Dockerfile.extended
   links:
     - "cache:rediscache"
     - "sessions:redissession"
     - "fullpagecache:redisfullpagecache"
-    - "solr:solr"
     - "mysql:mysql"
+    - "elasticsearch:elasticsearch"
+  environment:
+    PHP_IDE_CONFIG: "serverName=dockerized-magento.local"
   volumes:
     - .:/var/www/html
+    - ./docker-images/php/ext-xdebug.ini:/usr/local/etc/php/conf.d/ext-xdebug.ini:ro
 mysql:
-  image: mysql:5.5
+  image: mariadb:10.2
   ports:
     - "3306:3306"
   environment:
     MYSQL_ROOT_PASSWORD: pw
   volumes:
     - ./data/mysql:/var/lib/mysql
-solr:
-  image: andreaskoch/dockerized-magento-solr
+elasticsearch:
+  image: elasticsearch:1.5
+  environment:
+    discovery.type: single-node
+    http.host: 0.0.0.0
+    transport.host: 127.0.0.1
+    script.disable_dynamic: "false"
+    script.inline: "on"
+    script.indexed: "on"
+  volumes:
+    - ./elasticsearch.yml:/etc/elasticsearch/elasticsearch.yml
+  ports:
+    - "9300:9300"
+    - "9200:9200"
+kibana:
+  image: kibana:4.0.2
+  environment:
+    SERVER_NAME: localhost
+    ELASTICSEARCH_URL: http://elasticsearch:9200
+  ports:
+    - "5601:5601"
+  links:
+    - "elasticsearch:elasticsearch"
 cache:
   image: redis:latest
 fullpagecache:
